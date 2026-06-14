@@ -1,0 +1,122 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Monitoring Stack - Scalable Web App'
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: scalable-web-app
+  AlertEmail:
+    Type: String
+    Description: Email address for CloudWatch alerts
+
+Resources:
+
+  SNSTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub ${ProjectName}-alerts
+      Subscription:
+        - Protocol: email
+          Endpoint: !Ref AlertEmail
+
+  CPUAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub ${ProjectName}-high-cpu
+      AlarmDescription: EC2 CPU utilization exceeded 80%
+      MetricName: CPUUtilization
+      Namespace: AWS/EC2
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 80
+      ComparisonOperator: GreaterThanThreshold
+      AlarmActions:
+        - !Ref SNSTopic
+      OKActions:
+        - !Ref SNSTopic
+
+  ALB5XXAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub ${ProjectName}-alb-5xx
+      AlarmDescription: ALB 5XX errors exceeded threshold
+      MetricName: HTTPCode_Target_5XX_Count
+      Namespace: AWS/ApplicationELB
+      Statistic: Sum
+      Period: 60
+      EvaluationPeriods: 1
+      Threshold: 10
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - !Ref SNSTopic
+
+  Dashboard:
+    Type: AWS::CloudWatch::Dashboard
+    Properties:
+      DashboardName: !Sub ${ProjectName}-dashboard
+      DashboardBody: !Sub |
+        {
+          "widgets": [
+            {
+              "type": "metric",
+              "x": 0, "y": 0, "width": 12, "height": 6,
+              "properties": {
+                "title": "EC2 CPU Utilization",
+                "metrics": [["AWS/EC2", "CPUUtilization"]],
+                "period": 300,
+                "stat": "Average",
+                "region": "${AWS::Region}",
+                "view": "timeSeries"
+              }
+            },
+            {
+              "type": "metric",
+              "x": 12, "y": 0, "width": 12, "height": 6,
+              "properties": {
+                "title": "ALB Request Count",
+                "metrics": [["AWS/ApplicationELB", "RequestCount"]],
+                "period": 60,
+                "stat": "Sum",
+                "region": "${AWS::Region}",
+                "view": "timeSeries"
+              }
+            },
+            {
+              "type": "metric",
+              "x": 0, "y": 6, "width": 12, "height": 6,
+              "properties": {
+                "title": "ALB 5XX Errors",
+                "metrics": [["AWS/ApplicationELB", "HTTPCode_Target_5XX_Count"]],
+                "period": 60,
+                "stat": "Sum",
+                "region": "${AWS::Region}",
+                "view": "timeSeries"
+              }
+            },
+            {
+              "type": "metric",
+              "x": 12, "y": 6, "width": 12, "height": 6,
+              "properties": {
+                "title": "ALB Target Response Time",
+                "metrics": [["AWS/ApplicationELB", "TargetResponseTime"]],
+                "period": 60,
+                "stat": "Average",
+                "region": "${AWS::Region}",
+                "view": "timeSeries"
+              }
+            }
+          ]
+        }
+
+Outputs:
+  SNSTopicArn:
+    Value: !Ref SNSTopic
+    Export:
+      Name: !Sub ${ProjectName}-SNSTopicArn
+
+  DashboardName:
+    Value: !Ref Dashboard
+    Export:
+      Name: !Sub ${ProjectName}-DashboardName
